@@ -10,7 +10,9 @@
       "Bash(dotnet --version)",
       "mcp__serena__write_memory",
       "mcp__serena__list_memories",
-      "mcp__serena__read_memory"
+      "mcp__serena__read_memory",
+      "Bash(git checkout -b repository-pattern)",
+      "Bash(git add .claude/settings.local.json)"
     ],
     "deny": [],
     "ask": []
