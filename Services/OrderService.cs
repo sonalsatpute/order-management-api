@@ -1,121 +1,62 @@
-using MongoDB.Driver;
-using OrderManagementAPI.Data;
 using OrderManagementAPI.Models;
+using OrderManagementAPI.Repositories;
 
 namespace OrderManagementAPI.Services;
 
-// TECH DEBT: No interface, concrete implementation only
-// TECH DEBT: God class with too many responsibilities
+// TODO: Create interface for this service
 public class OrderService
 {
-    private readonly MongoContext _mongoContext;
-    private readonly PostgresContext _postgresContext;
+    private readonly IOrderRepository _orderRepository;
     
-    // TECH DEBT: Injecting data contexts directly instead of repositories
-    public OrderService(MongoContext mongoContext, PostgresContext postgresContext)
+    public OrderService(IOrderRepository orderRepository)
     {
-        _mongoContext = mongoContext;
-        _postgresContext = postgresContext;
+        _orderRepository = orderRepository;
     }
     
-    // TECH DEBT: Not async, blocking operations
-    public List<Order> GetRecentOrders(int days = 30)
+    public async Task<IEnumerable<Order>> GetRecentOrdersAsync(int days = 30)
     {
-        var cutoffDate = DateTime.Now.AddDays(-days);
-        var orders = new List<Order>();
-        
-        // TECH DEBT: Duplicate query logic
-        var mongoOrders = _mongoContext.Orders
-            .Find(x => x.CreatedDate >= cutoffDate)
-            .ToList();
-        orders.AddRange(mongoOrders);
-        
-        var pgOrders = _postgresContext.Orders
-            .Where(x => x.CreatedDate >= cutoffDate)
-            .ToList();
-        orders.AddRange(pgOrders);
-        
-        return orders;
+        return await _orderRepository.GetRecentOrdersAsync(days);
     }
     
-    // TECH DEBT: Business logic mixed with data access
-    public decimal CalculateMonthlyRevenue(int month, int year)
+    public async Task<decimal> CalculateMonthlyRevenueAsync(int month, int year)
     {
-        var startDate = new DateTime(year, month, 1);
-        var endDate = startDate.AddMonths(1);
-        
-        // TECH DEBT: N+1 query potential
-        var orders = GetOrdersByDateRange(startDate, endDate);
-        
-        // TECH DEBT: Business calculation in service instead of domain
-        decimal total = 0;
-        foreach (var order in orders)
+        return await _orderRepository.GetMonthlyRevenueAsync(month, year);
+    }
+    
+    public async Task<IEnumerable<Order>> GetOrdersByDateRangeAsync(DateTime start, DateTime end)
+    {
+        return await _orderRepository.GetOrdersByDateRangeAsync(start, end);
+    }
+    
+    public async Task<bool> ProcessHighValueOrdersAsync()
+    {
+        try
         {
-            if (order.Status == "delivered" || order.Status == "shipped")
-            {
-                total += order.Total;
-            }
-        }
-        
-        return total;
-    }
-    
-    // TECH DEBT: Private method doing too much
-    private List<Order> GetOrdersByDateRange(DateTime start, DateTime end)
-    {
-        var orders = new List<Order>();
-        
-        // TECH DEBT: Inefficient - loading all orders then filtering
-        var allMongoOrders = _mongoContext.Orders.Find(FilterDefinition<Order>.Empty).ToList();
-        orders.AddRange(allMongoOrders.Where(x => x.CreatedDate >= start && x.CreatedDate < end));
-        
-        var allPgOrders = _postgresContext.Orders.ToList();
-        orders.AddRange(allPgOrders.Where(x => x.CreatedDate >= start && x.CreatedDate < end));
-        
-        return orders;
-    }
-    
-    // TECH DEBT: Void method, no return value for success/failure
-    public void ProcessHighValueOrders()
-    {
-        // TECH DEBT: Magic number
-        var highValueOrders = GetRecentOrders(7).Where(x => x.Total > 1000).ToList();
-        
-        foreach (var order in highValueOrders)
-        {
-            // TECH DEBT: Side effects, no error handling
-            Console.WriteLine($"Processing high value order: {order.Id}");
+            const decimal HIGH_VALUE_THRESHOLD = 1000m;
+            var highValueOrders = await _orderRepository.GetHighValueOrdersAsync(HIGH_VALUE_THRESHOLD);
             
-            // TECH DEBT: Hardcoded business rules
-            if (order.Status == "pending")
+            foreach (var order in highValueOrders)
             {
-                order.Priority = "HIGH";
-                order.UpdatedDate = DateTime.Now;
+                Console.WriteLine($"Processing high value order: {order.Id}");
                 
-                // TECH DEBT: Update logic duplicated from controller
-                try
+                if (order.Status == "pending")
                 {
-                    if (!string.IsNullOrEmpty(order.Id))
-                    {
-                        _mongoContext.Orders.ReplaceOne(x => x.Id == order.Id, order);
-                    }
-                    else
-                    {
-                        _postgresContext.SaveChanges();
-                    }
-                }
-                catch
-                {
-                    // TECH DEBT: Swallowing exceptions
+                    order.Priority = "HIGH";
+                    await _orderRepository.UpdateAsync(order);
                 }
             }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error processing high value orders: {ex.Message}");
+            return false;
         }
     }
     
-    // TECH DEBT: Method doing validation, business logic, and data access
-    public bool ValidateAndCreateOrder(Order order)
+    public async Task<bool> ValidateAndCreateOrderAsync(Order order)
     {
-        // TECH DEBT: Basic validation in service instead of dedicated validator
+        // TODO: Move to dedicated validator
         if (string.IsNullOrEmpty(order.CustomerName) || 
             string.IsNullOrEmpty(order.CustomerEmail) ||
             !order.Items.Any())
@@ -123,33 +64,23 @@ public class OrderService
             return false;
         }
         
-        // TECH DEBT: Business logic in service
-        order.CreatedDate = DateTime.Now;
-        order.Status = "pending";
-        
-        // TECH DEBT: Manual calculation
-        decimal subtotal = order.Items.Sum(item => item.Quantity * item.UnitPrice);
-        order.Subtotal = subtotal;
-        order.Tax = subtotal * 0.08m; // TECH DEBT: Hardcoded tax rate
-        order.Total = order.Subtotal + order.Tax;
-        
-        // TECH DEBT: Storage decision in service layer
         try
         {
-            if (order.Total > 500)
-            {
-                _postgresContext.Orders.Add(order);
-                _postgresContext.SaveChanges();
-            }
-            else
-            {
-                _mongoContext.Orders.InsertOne(order);
-            }
+            // TODO: Move business logic to domain model
+            order.CreatedDate = DateTime.Now;
+            order.Status = "pending";
+            
+            decimal subtotal = order.Items.Sum(item => item.Quantity * item.UnitPrice);
+            order.Subtotal = subtotal;
+            order.Tax = subtotal * 0.08m; // TODO: Move to configuration
+            order.Total = order.Subtotal + order.Tax;
+            
+            await _orderRepository.CreateAsync(order);
             return true;
         }
-        catch
+        catch (Exception ex)
         {
-            // TECH DEBT: Swallowing exceptions, no logging
+            Console.WriteLine($"Error creating order: {ex.Message}");
             return false;
         }
     }
