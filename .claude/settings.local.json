@@ -12,7 +12,9 @@
       "mcp__serena__list_memories",
       "mcp__serena__read_memory",
       "Bash(git checkout -b repository-pattern)",
-      "Bash(git add .claude/settings.local.json)"
+      "Bash(git add .claude/settings.local.json)",
+      "Bash(git commit -m \"Update Claude settings for repository-pattern branch creation\")",
+      "Bash(git commit -m \"Update Claude settings with commit command\")"
     ],
     "deny": [],
     "ask": []
