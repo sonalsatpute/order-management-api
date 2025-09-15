@@ -1,0 +1,3 @@
+# Spec Summary (Lite)
+
+Implement a comprehensive repository pattern to abstract data access for both MongoDB and PostgreSQL databases, eliminating direct database context usage in controllers and services. This refactoring establishes clean architecture foundations, improves testability, and creates a unified interface for order management operations across dual storage systems with intelligent routing based on business rules.
