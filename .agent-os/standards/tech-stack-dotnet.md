@@ -12,7 +12,7 @@
 - API Pattern: RESTful Web API
 - Authentication: JWT with ASP.NET Core Identity
 - Dependency Injection: Built-in DI Container
-- Testing Framework: xUnit
+- Testing Framework: nUnit
 - Mocking: NSubstitute
 - Assertions: FluentAssertions
 - Test Data: Bogus (Faker)
