@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
-using MongoDB.Driver;
-using OrderManagementAPI.Data;
 using OrderManagementAPI.Models;
+using OrderManagementAPI.Repositories;
 using OrderManagementAPI.Services;
 
 namespace OrderManagementAPI.Controllers;
@@ -10,54 +9,38 @@ namespace OrderManagementAPI.Controllers;
 [Route("api/[controller]")]
 public class OrdersController : ControllerBase
 {
-    // TECH DEBT: Too many dependencies injected directly
-    private readonly MongoContext _mongoContext;
-    private readonly PostgresContext _postgresContext;
+    private readonly IOrderRepository _orderRepository;
     private readonly OrderService _orderService;
     
-    public OrdersController(MongoContext mongoContext, PostgresContext postgresContext, OrderService orderService)
+    public OrdersController(IOrderRepository orderRepository, OrderService orderService)
     {
-        _mongoContext = mongoContext;
-        _postgresContext = postgresContext;
+        _orderRepository = orderRepository;
         _orderService = orderService;
     }
 
-    // TECH DEBT: Fat method with multiple responsibilities
     [HttpGet]
-    public ActionResult<IEnumerable<Order>> GetOrders(string? status = null, bool includeArchived = false)
+    public async Task<ActionResult<IEnumerable<Order>>> GetOrders(string? status = null, bool includeArchived = false)
     {
         try
         {
-            var orders = new List<Order>();
+            IEnumerable<Order> orders;
             
-            // TECH DEBT: Business logic mixed with data access
-            // TECH DEBT: No async/await
-            
-            // Get from MongoDB (recent orders)
-            var mongoFilter = Builders<Order>.Filter.Empty;
-            if (!string.IsNullOrEmpty(status))
-            {
-                mongoFilter = Builders<Order>.Filter.Eq(x => x.Status, status);
-            }
-            
-            var mongoOrders = _mongoContext.Orders.Find(mongoFilter).ToList();
-            orders.AddRange(mongoOrders);
-            
-            // TECH DEBT: Duplicate logic for Postgres
             if (includeArchived)
             {
-                var pgOrders = _postgresContext.Orders.Where(x => x.CreatedDate < DateTime.Now.AddDays(-90)).ToList();
-                if (!string.IsNullOrEmpty(status))
-                {
-                    pgOrders = pgOrders.Where(x => x.Status == status).ToList();
-                }
-                orders.AddRange(pgOrders);
+                var archivedOrders = await _orderRepository.GetArchivedOrdersAsync();
+                var recentOrders = await _orderRepository.GetRecentOrdersAsync();
+                orders = recentOrders.Concat(archivedOrders);
             }
-            
-            // TECH DEBT: Business logic in controller
+            else
+            {
+                orders = string.IsNullOrEmpty(status) 
+                    ? await _orderRepository.GetRecentOrdersAsync()
+                    : await _orderRepository.GetByStatusAsync(status);
+            }
+
+            // TODO: Move business logic to a service
             foreach (var order in orders)
             {
-                // TECH DEBT: Magic numbers
                 if (order.Total > 1000)
                 {
                     order.Priority = "HIGH";
@@ -67,28 +50,23 @@ public class OrdersController : ControllerBase
                     order.Priority = "MEDIUM";
                 }
                 
-                // TECH DEBT: More business logic
                 if (order.CreatedDate < DateTime.Now.AddHours(-24) && order.Status == "pending")
                 {
                     order.Priority = "URGENT";
                 }
             }
             
-            // TECH DEBT: In-memory sorting of potentially large dataset
-            return Ok(orders.OrderByDescending(x => x.CreatedDate).ToList());
+            return Ok(orders.OrderByDescending(x => x.CreatedDate));
         }
         catch (Exception ex)
         {
-            // TECH DEBT: Poor error handling
-            return BadRequest("Something went wrong: " + ex.Message);
+            return StatusCode(500, $"Error retrieving orders: {ex.Message}");
         }
     }
 
-    // TECH DEBT: Another fat method
     [HttpPost]
-    public ActionResult<Order> CreateOrder([FromBody] Order order)
+    public async Task<ActionResult<Order>> CreateOrder([FromBody] Order order)
     {
-        // TECH DEBT: No validation
         if (order == null)
         {
             return BadRequest("Order is null");
@@ -96,80 +74,49 @@ public class OrdersController : ControllerBase
         
         try
         {
-            // TECH DEBT: Business logic in controller
+            // TODO: Add proper validation
+            // TODO: Move business logic to service
             order.CreatedDate = DateTime.Now;
             order.Status = "pending";
             
-            // TECH DEBT: Manual calculation instead of using domain model
-            decimal subtotal = 0;
-            foreach (var item in order.Items)
-            {
-                subtotal += item.Quantity * item.UnitPrice;
-            }
+            // Calculate totals
+            decimal subtotal = order.Items.Sum(item => item.Quantity * item.UnitPrice);
             order.Subtotal = subtotal;
-            
-            // TECH DEBT: Magic numbers for tax calculation
-            order.Tax = subtotal * 0.08m; // 8% tax hardcoded
+            order.Tax = subtotal * 0.08m; // TODO: Move to configuration
             order.Total = order.Subtotal + order.Tax;
             
-            // TECH DEBT: Deciding storage based on order value in controller
-            if (order.Total > 500)
-            {
-                // Store high-value orders in Postgres
-                _postgresContext.Orders.Add(order);
-                _postgresContext.SaveChanges();
-            }
-            else
-            {
-                // Store low-value orders in MongoDB
-                _mongoContext.Orders.InsertOne(order);
-            }
+            var createdOrder = await _orderRepository.CreateAsync(order);
             
-            return CreatedAtAction(nameof(GetOrderById), new { id = order.Id }, order);
+            return CreatedAtAction(nameof(GetOrderById), new { id = createdOrder.Id ?? createdOrder.OrderId.ToString() }, createdOrder);
         }
         catch (Exception ex)
         {
-            // TECH DEBT: Poor error handling
-            return StatusCode(500, "Error creating order: " + ex.Message);
+            return StatusCode(500, $"Error creating order: {ex.Message}");
         }
     }
 
-    // TECH DEBT: Yet another method with mixed concerns
     [HttpGet("{id}")]
-    public ActionResult<Order> GetOrderById(string id)
+    public async Task<ActionResult<Order>> GetOrderById(string id)
     {
         try
         {
-            // TECH DEBT: Try both databases - inefficient
-            var mongoOrder = _mongoContext.Orders.Find(x => x.Id == id).FirstOrDefault();
-            if (mongoOrder != null)
+            var order = await _orderRepository.GetByIdAsync(id);
+            if (order == null)
             {
-                return Ok(mongoOrder);
+                return NotFound();
             }
             
-            // TECH DEBT: Different ID types for different databases
-            if (int.TryParse(id, out int orderId))
-            {
-                var pgOrder = _postgresContext.Orders.FirstOrDefault(x => x.OrderId == orderId);
-                if (pgOrder != null)
-                {
-                    return Ok(pgOrder);
-                }
-            }
-            
-            return NotFound();
+            return Ok(order);
         }
         catch (Exception ex)
         {
-            return StatusCode(500, "Error retrieving order: " + ex.Message);
+            return StatusCode(500, $"Error retrieving order: {ex.Message}");
         }
     }
 
-    // TECH DEBT: Business logic in controller
     [HttpPatch("{id}/status")]
-    public ActionResult UpdateOrderStatus(string id, [FromBody] string newStatus)
+    public async Task<ActionResult> UpdateOrderStatus(string id, [FromBody] string newStatus)
     {
-        // TECH DEBT: No validation of status values
         var validStatuses = new[] { "pending", "processing", "shipped", "delivered", "cancelled" };
         if (!validStatuses.Contains(newStatus))
         {
@@ -178,48 +125,27 @@ public class OrdersController : ControllerBase
         
         try
         {
-            // TECH DEBT: Same inefficient lookup pattern
-            var mongoOrder = _mongoContext.Orders.Find(x => x.Id == id).FirstOrDefault();
-            if (mongoOrder != null)
+            var success = await _orderRepository.UpdateStatusAsync(id, newStatus);
+            if (!success)
             {
-                mongoOrder.Status = newStatus;
-                mongoOrder.UpdatedDate = DateTime.Now;
-                
-                // TECH DEBT: More business logic
-                if (newStatus == "shipped")
-                {
-                    // Send notification - but this is hardcoded
-                    Console.WriteLine($"Order {id} has been shipped to {mongoOrder.CustomerEmail}");
-                }
-                
-                _mongoContext.Orders.ReplaceOne(x => x.Id == id, mongoOrder);
-                return Ok(mongoOrder);
+                return NotFound();
             }
             
-            if (int.TryParse(id, out int orderId))
+            // TODO: Move notification logic to a service
+            if (newStatus == "shipped")
             {
-                var pgOrder = _postgresContext.Orders.FirstOrDefault(x => x.OrderId == orderId);
-                if (pgOrder != null)
+                var order = await _orderRepository.GetByIdAsync(id);
+                if (order != null)
                 {
-                    pgOrder.Status = newStatus;
-                    pgOrder.UpdatedDate = DateTime.Now;
-                    
-                    // TECH DEBT: Duplicate notification logic
-                    if (newStatus == "shipped")
-                    {
-                        Console.WriteLine($"Order {orderId} has been shipped to {pgOrder.CustomerEmail}");
-                    }
-                    
-                    _postgresContext.SaveChanges();
-                    return Ok(pgOrder);
+                    Console.WriteLine($"Order {id} has been shipped to {order.CustomerEmail}");
                 }
             }
             
-            return NotFound();
+            return NoContent();
         }
         catch (Exception ex)
         {
-            return StatusCode(500, "Error updating order: " + ex.Message);
+            return StatusCode(500, $"Error updating order: {ex.Message}");
         }
     }
 }
