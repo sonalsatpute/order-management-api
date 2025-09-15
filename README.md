@@ -45,7 +45,7 @@ dotnet restore
 dotnet run
 ```
 
-Visit: https://localhost:7000/swagger
+Visit: https://localhost:5000/swagger
 
 ## Demo Scenarios
 
