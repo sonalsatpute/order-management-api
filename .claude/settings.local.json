@@ -14,7 +14,19 @@
       "Bash(git checkout -b repository-pattern)",
       "Bash(git add .claude/settings.local.json)",
       "Bash(git commit -m \"Update Claude settings for repository-pattern branch creation\")",
-      "Bash(git commit -m \"Update Claude settings with commit command\")"
+      "Bash(git commit -m \"Update Claude settings with commit command\")",
+      "Bash(dir)",
+      "Bash(dotnet add reference ../OrderManagementAPI.csproj)",
+      "Bash(dotnet add package Moq)",
+      "Bash(mkdir Repositories)",
+      "Bash(dotnet test)",
+      "Bash(dotnet test --project OrderManagementAPI.Tests.csproj)",
+      "Bash(dotnet build)",
+      "Bash(dotnet build OrderManagementAPI.csproj)",
+      "Bash(dotnet test --verbosity normal)",
+      "Bash(dotnet test --verbosity detailed)",
+      "Bash(dotnet test --logger \"console;verbosity=normal\")",
+      "Bash(git add .)"
     ],
     "deny": [],
     "ask": []

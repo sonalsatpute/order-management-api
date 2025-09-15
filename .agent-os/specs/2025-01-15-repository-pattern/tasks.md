@@ -9,7 +9,7 @@ These are the tasks to be completed for the spec detailed in @.agent-os/specs/20
 
 ### 1. Core Repository Interface and Storage Strategy
 
-- [ ] 1.1 Write unit tests for core repository interface with CRUD operations
+- [x] 1.1 Write unit tests for core repository interface with CRUD operations
 - [ ] 1.2 Create IRepository<T> interface with generic CRUD methods
 - [ ] 1.3 Write unit tests for storage strategy selection logic
 - [ ] 1.4 Implement storage strategy selection mechanism (environment-based)
