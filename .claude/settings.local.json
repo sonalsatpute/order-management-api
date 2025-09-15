@@ -26,7 +26,8 @@
       "Bash(dotnet test --verbosity normal)",
       "Bash(dotnet test --verbosity detailed)",
       "Bash(dotnet test --logger \"console;verbosity=normal\")",
-      "Bash(git add .)"
+      "Bash(git add .)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Implement repository pattern foundation with comprehensive tests\n\n- Add IRepository<T> generic interface with full CRUD operations\n- Add IOrderRepository interface extending base repository\n- Create comprehensive unit test suite (5 tests, all passing)\n- Set up OrderManagementAPI.Tests project with xUnit and Moq\n- Fix project structure to properly separate main and test projects\n- Complete Task 1.1: Core repository interface unit tests\n\nTest Coverage:\n✅ GetByIdAsync returns correct entity\n✅ GetAllAsync returns all entities  \n✅ AddAsync adds new entity\n✅ UpdateAsync modifies existing entity\n✅ DeleteAsync removes entity\n\n🤖 Generated with [Claude Code](https://claude.ai/code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": []
